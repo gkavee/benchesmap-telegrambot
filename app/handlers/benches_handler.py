@@ -3,12 +3,12 @@ from typing import Dict, Any
 
 import requests
 from aiogram import Router, F
-import aiohttp
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 import app.keyboards.keyboard as kb
-from app.utils.states import GeoState, BenchForm
+from app.utils.states import GeoState, BenchForm, BenchDelete
 from config import API_URL
 
 router = Router()
@@ -120,7 +120,8 @@ async def show_summary(message: Message, data: Dict[str, Any]) -> None:
     latitude = data['latitude']
     longitude = data['longitude']
     text = (f"✅Вы создали лавочку🪑: \"{name}\" (<b>x{count}</b>)\n <i>{description}</i>"
-            f"\n Координаты: <code>{latitude}, {longitude}</code>")
+            f"\n Координаты: <code>{latitude}, {longitude}</code>\n"
+            f"<span class=\"tg-spoiler\">Используйте \"/delete\" для удаления</span>")
 
     await message.answer(text=text, reply_markup=kb.main)
 
@@ -198,3 +199,38 @@ async def send_location(message: Message, state: FSMContext) -> None:
 '''
 Удалить лавочку
 '''
+
+
+@router.message(Command('delete'))
+async def find_nearest(message: Message, state: FSMContext) -> None:
+    await state.set_state(BenchDelete.name)
+    await message.answer('Введите название лавочки')
+
+
+@router.message(BenchDelete.name)
+async def delete_bench(message: Message, state: FSMContext) -> None:
+    name = message.text
+
+    headers = {
+        'Content-Type': 'application/json',
+    }
+
+    username = message.from_user.username
+    cookies = {
+        "token": get_token(username),
+    }
+
+    try:
+        response = requests.delete(f'{API_URL}/bench/delete', params={'bench_name': name}, headers=headers, cookies=cookies)
+        print(response.json())
+        response.raise_for_status()
+        print(response.status_code)
+        await message.answer(f'<b>Лавочка "{name}" удалена</b>')
+    except requests.exceptions.RequestException as e:
+        if e.response.status_code == 401:
+            await message.answer('❌<b>Вы не можете удалить эту лавочку, так как не являетесь её создателем</b>',
+                                 reply_markup=kb.main)
+        else:
+            await message.answer('<b>Произошла ошибка при удалении лавочки!</b>', reply_markup=kb.main)
+
+    await state.clear()

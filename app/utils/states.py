@@ -11,3 +11,7 @@ class BenchForm(StatesGroup):
     count = State()
     latitude = State()
     longitude = State()
+
+
+class BenchDelete(StatesGroup):
+    name = State()
