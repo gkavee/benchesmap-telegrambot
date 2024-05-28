@@ -1,15 +1,16 @@
 import html
 from typing import Dict, Any
+import aiohttp
+from config import API_URL
 
-import requests
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message
 
 import app.keyboards.keyboard as kb
 from app.utils.states import GeoState, BenchForm, BenchDelete
-from config import API_URL
+
 
 router = Router()
 
@@ -19,14 +20,13 @@ router = Router()
 '''
 
 
-def get_token(username: str) -> str:
-    response = requests.post(f'{API_URL}/auth/tg/login?telegram_username={username}')
-
-    if response.status_code == 200:
-        data = response.json()
-        if 'token' in data:
-            return data['token']
-        if 'detail' in data:
+async def get_token(username: str) -> str:
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f'{API_URL}/auth/tg/login?telegram_username={username}') as response:
+            if response.status == 200:
+                data = await response.json()
+                if 'token' in data:
+                    return data['token']
             return 'token is none'
 
 
@@ -140,17 +140,20 @@ async def create_post_request(message: Message, data: Dict[str, Any]) -> None:
     }
 
     username = message.from_user.username
+    token = await get_token(username)  # Получаем токен асинхронно
+
     cookies = {
-        "token": get_token(username),
+        "token": token,
     }
 
     try:
-        response = requests.post(f'{API_URL}/bench/create', json=payload, headers=headers, cookies=cookies)
-        response.raise_for_status()
-        await show_summary(message=message, data=data)
-        await message.answer_location(data['latitude'], data['longitude'], reply_markup=kb.main)
-    except requests.exceptions.RequestException as e:
-        if e.response.status_code in [401, 404]:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f'{API_URL}/bench/create', json=payload, headers=headers, cookies=cookies) as response:
+                response.raise_for_status()
+                await show_summary(message=message, data=data)
+                await message.answer_location(data['latitude'], data['longitude'], reply_markup=kb.main)
+    except aiohttp.ClientResponseError as e:
+        if e.status in [401, 404]:
             await message.answer('❌<b>У вас нет доступа к добавлению лавочек!</b>', reply_markup=kb.main)
         else:
             await message.answer('<b>Произошла ошибка при добавлении лавочки!</b>', reply_markup=kb.main)
@@ -174,18 +177,21 @@ async def send_location(message: Message, state: FSMContext) -> None:
         lat = message.location.latitude
         long = message.location.longitude
         await message.answer(f'Вы отправили геолокацию с координатами: <code>{lat}</code>, <code>{long}</code>')
-        response = requests.get(f'{API_URL}/nearest_bench/?latitude={lat}&longitude={long}')
-        data = response.json()
-        rs_lat = data['latitude']
-        rs_long = data['longitude']
-        await message.answer(f"🪑Ближайшая лавочка находится по координатам: <code>{rs_lat}</code>, "
-                             f"<code>{rs_long}</code>",
-                             reply_markup=kb.main)
-        await message.reply_location(rs_lat, rs_long)
-        await state.clear()
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f'{API_URL}/nearest_bench/?latitude={lat}&longitude={long}') as response:
+                data = await response.json()
+                rs_lat = data['latitude']
+                rs_long = data['longitude']
+                await message.answer(f"🪑Ближайшая лавочка находится по координатам: <code>{rs_lat}</code>, "
+                                     f"<code>{rs_long}</code>",
+                                     reply_markup=kb.main)
+                await message.reply_location(rs_lat, rs_long)
+                await state.clear()
 
     else:
         await message.answer('❌<b>Отправьте геолокацию</b>', reply_markup=kb.geo)
+
 
 '''
 Изменить лавочку
@@ -215,20 +221,25 @@ async def delete_bench_command(message: Message, state: FSMContext):
 async def delete_bench_by_name(name: str, message: Message, state: FSMContext):
     headers = {'Content-Type': 'application/json'}
     username = message.from_user.username
-    cookies = {"token": get_token(username)}
+    token = await get_token(username)
+    cookies = {"token": token}
+
     try:
-        response = requests.delete(f'{API_URL}/bench/delete', params={'bench_name': name}, headers=headers,
-                                   cookies=cookies)
-        response.raise_for_status()
-        data = response.json()
-        if ("status" in data and data["status"] == "error"
-                and data["message"] == "Bench not found or you are not the creator"):
-            await message.answer('❌<b>Вы не можете удалить эту лавочку, так как не являетесь её создателем</b>',
-                                 reply_markup=kb.main)
-        else:
-            await message.answer(f'<b>Лавочка "{name}" удалена</b>')
-    except requests.exceptions.RequestException:
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(f'{API_URL}/bench/delete', params={'bench_name': name}, headers=headers,
+                                      cookies=cookies) as response:
+                response.raise_for_status()
+                data = await response.json()
+
+                if ("status" in data and data["status"] == "error"
+                        and data["message"] == "Bench not found or you are not the creator"):
+                    await message.answer('❌<b>Вы не можете удалить эту лавочку, так как не являетесь её создателем</b>',
+                                         reply_markup=kb.main)
+                else:
+                    await message.answer(f'<b>Лавочка "{name}" удалена</b>')
+    except aiohttp.ClientResponseError:
         await message.answer('<b>Произошла ошибка при удалении лавочки!</b>', reply_markup=kb.main)
+
     await state.clear()
 
 
