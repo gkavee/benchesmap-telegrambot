@@ -1,11 +1,11 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, \
+    InlineKeyboardButton
 
 '''
 Replies
 '''
 main = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='🔍Найти лавочку'), KeyboardButton(text='➕Создать лавочку')],
-    # [KeyboardButton(text='✏️Изменить лавочку'), KeyboardButton(text='🗑️Удалить лавочку')]
 ], resize_keyboard=True, input_field_placeholder="???")
 
 geo = ReplyKeyboardMarkup(keyboard=[
@@ -17,3 +17,13 @@ cancel = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Отмена❌')]]
 
 reply_rm = ReplyKeyboardRemove()
 
+'''
+Inlines
+'''
+bench_delete = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="/delete", url='https://t.me/sdfsdf890')
+        ]
+    ]
+)

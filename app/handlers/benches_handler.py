@@ -5,7 +5,7 @@ import requests
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 
 import app.keyboards.keyboard as kb
 from app.utils.states import GeoState, BenchForm, BenchDelete
@@ -121,9 +121,9 @@ async def show_summary(message: Message, data: Dict[str, Any]) -> None:
     longitude = data['longitude']
     text = (f"✅Вы создали лавочку🪑: \"{name}\" (<b>x{count}</b>)\n <i>{description}</i>"
             f"\n Координаты: <code>{latitude}, {longitude}</code>\n"
-            f"<span class=\"tg-spoiler\">Используйте \"/delete\" для удаления</span>")
+            f"<span class=\"tg-spoiler\">Используйте \"/delete\" или \"/delete <i>Имя лавочки</i>\" для удаления</span>")
 
-    await message.answer(text=text, reply_markup=kb.main)
+    await message.answer(text=text, reply_markup=kb.bench_delete)
 
 
 async def create_post_request(message: Message, data: Dict[str, Any]) -> None:
@@ -148,7 +148,7 @@ async def create_post_request(message: Message, data: Dict[str, Any]) -> None:
         response = requests.post(f'{API_URL}/bench/create', json=payload, headers=headers, cookies=cookies)
         response.raise_for_status()
         await show_summary(message=message, data=data)
-        await message.answer_location(data['latitude'], data['longitude'])
+        await message.answer_location(data['latitude'], data['longitude'], reply_markup=kb.main)
     except requests.exceptions.RequestException as e:
         if e.response.status_code in [401, 404]:
             await message.answer('❌<b>У вас нет доступа к добавлению лавочек!</b>', reply_markup=kb.main)
@@ -181,10 +181,6 @@ async def send_location(message: Message, state: FSMContext) -> None:
         await message.answer(f"🪑Ближайшая лавочка находится по координатам: <code>{rs_lat}</code>, "
                              f"<code>{rs_long}</code>",
                              reply_markup=kb.main)
-        # await message.answer(f"🪑Ближайшая лавочка находится по координатам: <code>{rs_lat}</code>, "
-        #                      f"<code>{rs_long}</code>\n\n"
-        #                      f"{data['name']} (x{data['count']})\n <i>{data['description']}</i>",
-        #                      reply_markup=kb.main)
         await message.reply_location(rs_lat, rs_long)
         await state.clear()
 
@@ -202,35 +198,41 @@ async def send_location(message: Message, state: FSMContext) -> None:
 
 
 @router.message(Command('delete'))
-async def find_nearest(message: Message, state: FSMContext) -> None:
-    await state.set_state(BenchDelete.name)
-    await message.answer('Введите название лавочки')
+async def delete_bench_command(message: Message, state: FSMContext):
+    command_parts = message.text.split(maxsplit=1)
+    if len(command_parts) == 1:
+        await message.answer('Введите имя лавочки, которую нужно удалить:')
+        await state.set_state(BenchDelete.name)
+        return
+    elif len(command_parts) == 2:
+        name = command_parts[1]
+        await delete_bench_by_name(name, message, state)
+    else:
+        await message.answer('❌ Неправильный формат команды. Используйте: /delete {name}')
+        return
 
 
-@router.message(BenchDelete.name)
-async def delete_bench(message: Message, state: FSMContext) -> None:
-    name = message.text
-
-    headers = {
-        'Content-Type': 'application/json',
-    }
-
+async def delete_bench_by_name(name: str, message: Message, state: FSMContext):
+    headers = {'Content-Type': 'application/json'}
     username = message.from_user.username
-    cookies = {
-        "token": get_token(username),
-    }
-
+    cookies = {"token": get_token(username)}
     try:
-        response = requests.delete(f'{API_URL}/bench/delete', params={'bench_name': name}, headers=headers, cookies=cookies)
-        print(response.json())
+        response = requests.delete(f'{API_URL}/bench/delete', params={'bench_name': name}, headers=headers,
+                                   cookies=cookies)
         response.raise_for_status()
-        print(response.status_code)
-        await message.answer(f'<b>Лавочка "{name}" удалена</b>')
-    except requests.exceptions.RequestException as e:
-        if e.response.status_code == 401:
+        data = response.json()
+        if ("status" in data and data["status"] == "error"
+                and data["message"] == "Bench not found or you are not the creator"):
             await message.answer('❌<b>Вы не можете удалить эту лавочку, так как не являетесь её создателем</b>',
                                  reply_markup=kb.main)
         else:
-            await message.answer('<b>Произошла ошибка при удалении лавочки!</b>', reply_markup=kb.main)
-
+            await message.answer(f'<b>Лавочка "{name}" удалена</b>')
+    except requests.exceptions.RequestException:
+        await message.answer('<b>Произошла ошибка при удалении лавочки!</b>', reply_markup=kb.main)
     await state.clear()
+
+
+@router.message(BenchDelete.name)
+async def delete_bench(message: Message, state: FSMContext):
+    name = message.text
+    await delete_bench_by_name(name, message, state)
