@@ -1,4 +1,5 @@
 import html
+import re
 from typing import Dict, Any
 import aiohttp
 from config import API_URL
@@ -6,7 +7,7 @@ from config import API_URL
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 
 import app.keyboards.keyboard as kb
 from app.utils.states import GeoState, BenchForm, BenchDelete
@@ -54,6 +55,7 @@ async def cancel_handler(message: Message, state: FSMContext) -> None:
         )
 
     await state.clear()
+
 
 '''
 Создать лавочку
@@ -148,7 +150,8 @@ async def create_post_request(message: Message, data: Dict[str, Any]) -> None:
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(f'{API_URL}/bench/create', json=payload, headers=headers, cookies=cookies) as response:
+            async with session.post(f'{API_URL}/bench/create',
+                                    json=payload, headers=headers, cookies=cookies) as response:
                 response.raise_for_status()
                 await show_summary(message=message, data=data)
                 await message.answer_location(data['latitude'], data['longitude'], reply_markup=kb.main)
@@ -233,7 +236,8 @@ async def delete_bench_by_name(name: str, message: Message, state: FSMContext):
 
                 if ("status" in data and data["status"] == "error"
                         and data["message"] == "Bench not found or you are not the creator"):
-                    await message.answer('❌<b>Вы не можете удалить эту лавочку, так как не являетесь её создателем</b>',
+                    await message.answer('❌<b>Вы не можете удалить эту лавочку, так как её не существует '
+                                         'или вы не являетесь её создателем</b>',
                                          reply_markup=kb.main)
                 else:
                     await message.answer(f'<b>Лавочка "{name}" удалена</b>')
@@ -247,3 +251,27 @@ async def delete_bench_by_name(name: str, message: Message, state: FSMContext):
 async def delete_bench(message: Message, state: FSMContext):
     name = message.text
     await delete_bench_by_name(name, message, state)
+
+
+@router.callback_query(lambda c: c.data == "delete_bench")
+async def delete_bench_callback(callback: CallbackQuery):
+    message_text = callback.message.text
+    match = re.search(r'"([^"]+)"', message_text)
+    name = match.group(1)
+
+    headers = {'Content-Type': 'application/json'}
+    username = callback.from_user.username
+    token = await get_token(username)
+    cookies = {"token": token}
+
+    async with aiohttp.ClientSession() as session:
+        async with session.delete(f'{API_URL}/bench/delete', params={'bench_name': name}, headers=headers,
+                                  cookies=cookies) as response:
+            if response.status == 200:
+                new_message_text = f"✅Лавочка <i>\"{name}\"</i> успешно удалена"
+                if callback.message.text != new_message_text:
+                    await callback.message.edit_text(new_message_text)
+            else:
+                await callback.message.answer("❗Произошла ошибка при удалении лавочки")
+
+    await callback.answer()

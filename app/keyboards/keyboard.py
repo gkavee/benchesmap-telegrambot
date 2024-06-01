@@ -23,7 +23,7 @@ Inlines
 bench_delete = InlineKeyboardMarkup(
     inline_keyboard=[
         [
-            InlineKeyboardButton(text="/delete", url='https://t.me/sdfsdf890')
+            InlineKeyboardButton(text="❌Удалить лавочку", callback_data="delete_bench")
         ]
     ]
 )
