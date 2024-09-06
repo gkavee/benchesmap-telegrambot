@@ -1,11 +1,10 @@
 import html
-import io
 from typing import Any, Dict
 
 import aiohttp
-from aiogram import F, Router, Bot
+from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, FSInputFile
+from aiogram.types import FSInputFile, Message
 
 from app.keyboards import keyboard as kb
 from app.utils.auth import get_token
@@ -15,10 +14,12 @@ from run import bot
 
 router = Router()
 
+
 @router.message(F.text == "➕Создать лавочку")
 async def fill_bench(message: Message, state: FSMContext) -> None:
     await state.set_state(BenchForm.name)
     await message.answer("Введите название", reply_markup=kb.cancel)
+
 
 @router.message(BenchForm.name)
 async def bench_name(message: Message, state: FSMContext) -> None:
@@ -29,6 +30,7 @@ async def bench_name(message: Message, state: FSMContext) -> None:
         await message.answer("Опишите лавочку")
     else:
         await message.answer("❌<b>Максимальная длина названия — 50 символов!</b>")
+
 
 @router.message(BenchForm.description)
 async def bench_description(message: Message, state: FSMContext) -> None:
@@ -60,11 +62,16 @@ async def bench_latitude(message: Message, state: FSMContext) -> None:
         bench_id = await create_post_request(message=message, data=data)
         if bench_id:
             await state.update_data(id=bench_id)
-            await message.answer("Лавочка создана! Отправьте фото лавочки (если есть)", reply_markup=None)
+            await message.answer(
+                "<b>Лавочка создана! Отправьте фото лавочки (если есть)</b>",
+                reply_markup=None,
+            )
             await state.set_state(BenchForm.photo_url)
         else:
             await state.clear()
-            await message.answer("Не удалось создать лавочку. Попробуйте еще раз.", reply_markup=kb.main)
+            await message.answer(
+                "Не удалось создать лавочку. Попробуйте еще раз.", reply_markup=kb.main
+            )
     else:
         await message.answer("❌<b>Отправьте геолокацию!</b>", reply_markup=kb.geo)
 
@@ -75,10 +82,13 @@ async def bench_photo(message: Message, state: FSMContext, bot: Bot) -> None:
     token = await get_token(username)
 
     data = await state.get_data()
-    bench_id = data.get('id')
+    bench_id = data.get("id")
 
     if not bench_id:
-        await message.answer("❌<b>Не удалось определить лавочку для загрузки фото!</b>", reply_markup=kb.main)
+        await message.answer(
+            "❌<b>Не удалось определить лавочку для загрузки фото!</b>",
+            reply_markup=kb.main,
+        )
         return
 
     if not message.photo:
@@ -98,17 +108,21 @@ async def bench_photo(message: Message, state: FSMContext, bot: Bot) -> None:
     try:
         async with aiohttp.ClientSession(cookies=cookies) as session:
             form = aiohttp.FormData()
-            form.add_field('file',
-                           await bot.download_file(file_path),
-                           filename=input_file.filename,
-                           content_type='image/jpeg')
+            form.add_field(
+                "file",
+                await bot.download_file(file_path),
+                filename=input_file.filename,
+                content_type="image/jpeg",
+            )
 
             async with session.post(
-                    f"{API_URL}/upload_bench_photo/{bench_id}",
-                    data=form,
+                f"{API_URL}/upload_bench_photo/{bench_id}",
+                data=form,
             ) as response:
                 response.raise_for_status()
-                await message.answer("📸 Фото успешно загружено!", reply_markup=kb.main)
+                await message.answer(
+                    "🖼️ <b>Фото успешно загружено!<b>", reply_markup=kb.main
+                )
     except aiohttp.ClientResponseError as e:
         if e.status in [401, 404]:
             await message.answer(
@@ -180,17 +194,20 @@ async def upload_bench_photo(message: Message, bench_id: str, photo_file: str) -
     }
 
     try:
-        with open(photo_file, 'rb') as file:
+        with open(photo_file, "rb") as file:
             form_data = aiohttp.FormData()
-            form_data.add_field('file', file, filename='photo.jpg', content_type='image/jpeg')
+            form_data.add_field(
+                "file", file, filename="photo.jpg", content_type="image/jpeg"
+            )
 
             async with aiohttp.ClientSession(cookies=cookies) as session:
                 async with session.post(
-                    f"{API_URL}/upload_bench_photo/{bench_id}",
-                    data=form_data
+                    f"{API_URL}/upload_bench_photo/{bench_id}", data=form_data
                 ) as response:
                     response.raise_for_status()
-                    await message.answer("📸 Фото успешно загружено!", reply_markup=kb.main)
+                    await message.answer(
+                        "📸 Фото успешно загружено!", reply_markup=kb.main
+                    )
 
     except aiohttp.ClientResponseError as e:
         if e.status in [401, 404]:
@@ -226,10 +243,12 @@ async def show_summary(message: Message, data: Dict[str, Any]) -> None:
                             chat_id=message.chat.id,
                             photo=photo_url,
                             caption=text,
-                            reply_markup=kb.del_or_edit_bench
+                            reply_markup=kb.del_or_edit_bench,
                         )
                     else:
-                        await message.answer(text=text, reply_markup=kb.del_or_edit_bench)
+                        await message.answer(
+                            text=text, reply_markup=kb.del_or_edit_bench
+                        )
         except Exception as e:
             print(f"Error downloading photo: {e}")
             await message.answer(text=text, reply_markup=kb.del_or_edit_bench)
